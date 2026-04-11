@@ -20,16 +20,28 @@ def _resolve_package(config: AppConfig, package_name: str | None) -> str | None:
     return package_name or config.google.default_package_name
 
 
-# vitals 指标集列表: (metric_set_id, resource_name_id, 中文名, description)
+# vitals 指标集列表: (metric_set_id, resource_name_id, 中文名, description, default_metrics)
 # metric_set_id: 用于 service.vitals().xxx() 的小写名称
 # resource_name_id: 用于 API resource name 的 camelCase 名称
 _VITALS_METRIC_SETS = [
-    ("anrrate", "anrRateMetricSet", "ANR 率", "查询应用的 ANR (Application Not Responding) 率指标"),
-    ("crashrate", "crashRateMetricSet", "崩溃率", "查询应用的崩溃率指标"),
-    ("slowstartrate", "slowStartRateMetricSet", "慢启动率", "查询应用的冷启动/温启动/热启动慢启动率"),
-    ("slowrenderingrate", "slowRenderingRateMetricSet", "慢渲染率", "查询应用的慢帧渲染和冻帧率"),
-    ("excessivewakeuprate", "excessiveWakeupRateMetricSet", "过度唤醒率", "查询应用的 AlarmManager 过度唤醒率"),
-    ("stuckbackgroundwakelockrate", "stuckBackgroundWakelockRateMetricSet", "后台锁定率", "查询应用的后台 WakeLock 卡住率"),
+    ("anrrate", "anrRateMetricSet", "ANR 率",
+     "查询应用的 ANR (Application Not Responding) 率指标",
+     ["anrRate", "userPerceivedAnrRate", "distinctUsers"]),
+    ("crashrate", "crashRateMetricSet", "崩溃率",
+     "查询应用的崩溃率指标",
+     ["crashRate", "userPerceivedCrashRate", "distinctUsers"]),
+    ("slowstartrate", "slowStartRateMetricSet", "慢启动率",
+     "查询应用的冷启动/温启动/热启动慢启动率",
+     ["slowStartRate", "distinctUsers"]),
+    ("slowrenderingrate", "slowRenderingRateMetricSet", "慢渲染率",
+     "查询应用的慢帧渲染和冻帧率",
+     ["slowRenderingRate", "distinctUsers"]),
+    ("excessivewakeuprate", "excessiveWakeupRateMetricSet", "过度唤醒率",
+     "查询应用的 AlarmManager 过度唤醒率",
+     ["excessiveWakeupRate", "distinctUsers"]),
+    ("stuckbackgroundwakelockrate", "stuckBackgroundWakelockRateMetricSet", "后台锁定率",
+     "查询应用的后台 WakeLock 卡住率",
+     ["stuckBackgroundWakelockRate", "distinctUsers"]),
 ]
 
 
@@ -75,7 +87,7 @@ def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
             return handle_google_error(e)
 
     # --- vitals 指标查询 (get + query) ---
-    for metric_id, resource_id, cn_name, desc in _VITALS_METRIC_SETS:
+    for metric_id, resource_id, cn_name, desc, default_metrics in _VITALS_METRIC_SETS:
 
         def _make_get_tool(mid: str, res_id: str, cn: str):
             @mcp.tool(name=f"googleplay_vitals_{mid}_get")
@@ -100,7 +112,7 @@ def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
             vitals_get.__doc__ = f"获取 {cn} 指标集的元数据信息 (可用指标和维度)。\n\nArgs:\n    package_name: 应用包名, 留空使用默认配置"
             return vitals_get
 
-        def _make_query_tool(mid: str, res_id: str, cn: str, description: str):
+        def _make_query_tool(mid: str, res_id: str, cn: str, description: str, def_metrics: list[str]):
             @mcp.tool(name=f"googleplay_vitals_{mid}_query")
             def vitals_query(
                 package_name: str = "",
@@ -154,8 +166,7 @@ def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
                         }
                     if dimensions:
                         body["dimensions"] = dimensions
-                    if metrics:
-                        body["metrics"] = metrics
+                    body["metrics"] = metrics if metrics else def_metrics
                     if page_token:
                         body["pageToken"] = page_token
 
@@ -181,7 +192,7 @@ Args:
             return vitals_query
 
         _make_get_tool(metric_id, resource_id, cn_name)
-        _make_query_tool(metric_id, resource_id, cn_name, desc)
+        _make_query_tool(metric_id, resource_id, cn_name, desc, default_metrics)
 
     # --- vitals.errors.counts ---
     @mcp.tool(name="googleplay_vitals_errors_counts_query")
@@ -230,10 +241,8 @@ Args:
                 body["timelineSpec"]["endTime"] = {
                     "year": int(parts[0]), "month": int(parts[1]), "day": int(parts[2]),
                 }
-            if dimensions:
-                body["dimensions"] = dimensions
-            if metrics:
-                body["metrics"] = metrics
+            body["dimensions"] = dimensions if dimensions else ["reportType"]
+            body["metrics"] = metrics if metrics else ["errorReportCount", "distinctUsers"]
             if page_token:
                 body["pageToken"] = page_token
 
@@ -317,7 +326,9 @@ Args:
             kwargs: dict = {"parent": parent, "pageSize": page_size}
             filters = []
             if issue_name:
-                filters.append(f'issue = "{issue_name}"')
+                # issue_name 格式为 apps/{pkg}/{issueHash}，提取 issueHash
+                issue_id = issue_name.rsplit("/", 1)[-1]
+                filters.append(f'issueId = "{issue_id}"')
             if filter_expr:
                 filters.append(filter_expr)
             if filters:
