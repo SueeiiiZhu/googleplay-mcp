@@ -20,6 +20,8 @@ def create_server(config: AppConfig) -> FastMCP:
             "用户评论、购买验证、订阅管理、财务报告等查询能力。"
             "大部分 tool 需要 package_name 参数，可通过环境变量 GOOGLE_PLAY_PACKAGE_NAME 设置默认值。"
         ),
+        host=config.server.host,
+        port=config.server.port,
     )
 
     from googleplay_mcp.tools import register_all_tools

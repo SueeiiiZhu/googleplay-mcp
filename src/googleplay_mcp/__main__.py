@@ -28,11 +28,7 @@ def main() -> None:
 
     if config.server.transport == "http":
         logger.info("Starting HTTP server on %s:%s", config.server.host, config.server.port)
-        mcp.run(
-            transport="streamable-http",
-            host=config.server.host,
-            port=config.server.port,
-        )
+        mcp.run(transport="streamable-http")
     else:
         logger.info("Starting stdio server")
         mcp.run(transport="stdio")
