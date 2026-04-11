@@ -51,7 +51,8 @@ def register_purchases_tools(mcp: FastMCP, config: AppConfig) -> None:
         except HttpError as e:
             return handle_google_error(e)
 
-    @mcp.tool(name="googleplay_purchases_product_acknowledge")
+    # TODO: 暂时屏蔽写入接口
+    # @mcp.tool(name="googleplay_purchases_product_acknowledge")
     def purchases_product_acknowledge(
         product_id: str,
         token: str,

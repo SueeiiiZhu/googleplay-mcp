@@ -20,14 +20,16 @@ def _resolve_package(config: AppConfig, package_name: str | None) -> str | None:
     return package_name or config.google.default_package_name
 
 
-# vitals 指标集列表: (metric_set_id, 中文名, description)
+# vitals 指标集列表: (metric_set_id, resource_name_id, 中文名, description)
+# metric_set_id: 用于 service.vitals().xxx() 的小写名称
+# resource_name_id: 用于 API resource name 的 camelCase 名称
 _VITALS_METRIC_SETS = [
-    ("anrrate", "ANR 率", "查询应用的 ANR (Application Not Responding) 率指标"),
-    ("crashrate", "崩溃率", "查询应用的崩溃率指标"),
-    ("slowstartrate", "慢启动率", "查询应用的冷启动/温启动/热启动慢启动率"),
-    ("slowrenderingrate", "慢渲染率", "查询应用的慢帧渲染和冻帧率"),
-    ("excessivewakeuprate", "过度唤醒率", "查询应用的 AlarmManager 过度唤醒率"),
-    ("stuckbackgroundwakelockrate", "后台锁定率", "查询应用的后台 WakeLock 卡住率"),
+    ("anrrate", "anrRateMetricSet", "ANR 率", "查询应用的 ANR (Application Not Responding) 率指标"),
+    ("crashrate", "crashRateMetricSet", "崩溃率", "查询应用的崩溃率指标"),
+    ("slowstartrate", "slowStartRateMetricSet", "慢启动率", "查询应用的冷启动/温启动/热启动慢启动率"),
+    ("slowrenderingrate", "slowRenderingRateMetricSet", "慢渲染率", "查询应用的慢帧渲染和冻帧率"),
+    ("excessivewakeuprate", "excessiveWakeupRateMetricSet", "过度唤醒率", "查询应用的 AlarmManager 过度唤醒率"),
+    ("stuckbackgroundwakelockrate", "stuckBackgroundWakelockRateMetricSet", "后台锁定率", "查询应用的后台 WakeLock 卡住率"),
 ]
 
 
@@ -73,9 +75,9 @@ def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
             return handle_google_error(e)
 
     # --- vitals 指标查询 (get + query) ---
-    for metric_id, cn_name, desc in _VITALS_METRIC_SETS:
+    for metric_id, resource_id, cn_name, desc in _VITALS_METRIC_SETS:
 
-        def _make_get_tool(mid: str, cn: str):
+        def _make_get_tool(mid: str, res_id: str, cn: str):
             @mcp.tool(name=f"googleplay_vitals_{mid}_get")
             def vitals_get(package_name: str = "") -> dict:
                 f"""获取 {cn} 指标集的元数据信息 (可用指标和维度)。
@@ -88,7 +90,7 @@ def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
                     return error("需要提供 package_name 或设置 GOOGLE_PLAY_PACKAGE_NAME")
                 try:
                     service = get_reporting_service(config)
-                    name = f"apps/{pkg}/{mid}MetricSet"
+                    name = f"apps/{pkg}/{res_id}"
                     resource = getattr(service.vitals(), mid)
                     req = resource().get(name=name)
                     result = req.execute()
@@ -98,7 +100,7 @@ def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
             vitals_get.__doc__ = f"获取 {cn} 指标集的元数据信息 (可用指标和维度)。\n\nArgs:\n    package_name: 应用包名, 留空使用默认配置"
             return vitals_get
 
-        def _make_query_tool(mid: str, cn: str, description: str):
+        def _make_query_tool(mid: str, res_id: str, cn: str, description: str):
             @mcp.tool(name=f"googleplay_vitals_{mid}_query")
             def vitals_query(
                 package_name: str = "",
@@ -127,7 +129,7 @@ def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
                     return error("需要提供 package_name 或设置 GOOGLE_PLAY_PACKAGE_NAME")
                 try:
                     service = get_reporting_service(config)
-                    name = f"apps/{pkg}/{mid}MetricSet"
+                    name = f"apps/{pkg}/{res_id}"
 
                     body: dict = {
                         "timelineSpec": {
@@ -178,8 +180,8 @@ Args:
     aggregation_period: 聚合周期 DAILY 或 HOURLY"""
             return vitals_query
 
-        _make_get_tool(metric_id, cn_name)
-        _make_query_tool(metric_id, cn_name, desc)
+        _make_get_tool(metric_id, resource_id, cn_name)
+        _make_query_tool(metric_id, resource_id, cn_name, desc)
 
     # --- vitals.errors.counts ---
     @mcp.tool(name="googleplay_vitals_errors_counts_query")
@@ -311,10 +313,15 @@ Args:
             return error("需要提供 package_name 或设置 GOOGLE_PLAY_PACKAGE_NAME")
         try:
             service = get_reporting_service(config)
-            parent = issue_name if issue_name else f"apps/{pkg}"
+            parent = f"apps/{pkg}"
             kwargs: dict = {"parent": parent, "pageSize": page_size}
+            filters = []
+            if issue_name:
+                filters.append(f'issue = "{issue_name}"')
             if filter_expr:
-                kwargs["filter"] = filter_expr
+                filters.append(filter_expr)
+            if filters:
+                kwargs["filter"] = " AND ".join(filters)
             if page_token:
                 kwargs["pageToken"] = page_token
             if interval_start and interval_end:

@@ -86,7 +86,8 @@ def register_reviews_tools(mcp: FastMCP, config: AppConfig) -> None:
         except HttpError as e:
             return handle_google_error(e)
 
-    @mcp.tool(name="googleplay_reviews_reply")
+    # TODO: 暂时屏蔽写入接口
+    # @mcp.tool(name="googleplay_reviews_reply")
     def reviews_reply(
         review_id: str,
         reply_text: str,
