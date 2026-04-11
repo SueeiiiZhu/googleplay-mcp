@@ -157,3 +157,162 @@ npx @modelcontextprotocol/inspector uv run python -m googleplay_mcp
 ```
 
 在 MCP Inspector 中调用 `googleplay_apps_search`，如果返回应用列表则说明配置成功。
+
+## 系统服务部署 (HTTP 模式)
+
+以 HTTP 模式部署为系统服务，实现开机自启和自动重启。
+
+### macOS (launchd)
+
+1. 创建配置文件：
+
+```bash
+sudo tee /Library/LaunchDaemons/com.googleplay-mcp.plist > /dev/null << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.googleplay-mcp</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/xi/.local/bin/uv</string>
+        <string>--directory</string>
+        <string>/Users/xi/workspace/googleplay-mcp</string>
+        <string>run</string>
+        <string>python</string>
+        <string>-m</string>
+        <string>googleplay_mcp</string>
+        <string>--transport</string>
+        <string>http</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8000</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>GOOGLE_SERVICE_ACCOUNT_KEY_FILE</key>
+        <string>/path/to/service-account.json</string>
+        <key>GOOGLE_PLAY_PACKAGE_NAME</key>
+        <string>com.example.app</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/googleplay-mcp.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/googleplay-mcp.error.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/xi/workspace/googleplay-mcp</string>
+</dict>
+</plist>
+EOF
+```
+
+> **注意**：请将 `uv` 路径替换为实际路径，可通过 `which uv` 获取。如果作为当前用户运行（非 root），plist 文件应放在 `~/Library/LaunchAgents/` 下。
+
+2. 管理服务：
+
+```bash
+# 加载并启动
+sudo launchctl load /Library/LaunchDaemons/com.googleplay-mcp.plist
+
+# 停止并卸载
+sudo launchctl unload /Library/LaunchDaemons/com.googleplay-mcp.plist
+
+# 查看状态
+sudo launchctl list | grep googleplay-mcp
+
+# 查看日志
+tail -f /var/log/googleplay-mcp.log
+tail -f /var/log/googleplay-mcp.error.log
+```
+
+如果使用 `~/Library/LaunchAgents/` (当前用户级)，则不需要 `sudo`：
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.googleplay-mcp.plist
+launchctl unload ~/Library/LaunchAgents/com.googleplay-mcp.plist
+```
+
+### Linux (systemd)
+
+1. 创建 service 文件：
+
+```bash
+sudo tee /etc/systemd/system/googleplay-mcp.service > /dev/null << 'EOF'
+[Unit]
+Description=Google Play MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/googleplay-mcp
+
+Environment=GOOGLE_SERVICE_ACCOUNT_KEY_FILE=/opt/googleplay-mcp/service-account.json
+Environment=GOOGLE_PLAY_PACKAGE_NAME=com.example.app
+# Environment=GOOGLE_PLAY_REPORT_BUCKET=pubsite_prod_rev_xxx
+
+ExecStart=/usr/local/bin/uv --directory /opt/googleplay-mcp run python -m googleplay_mcp --transport http --host 0.0.0.0 --port 8000
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=googleplay-mcp
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+> **注意**：请根据实际情况修改 `User`、`WorkingDirectory`、`uv` 路径和环境变量。`--host 0.0.0.0` 表示监听所有网卡，如仅本机访问改为 `127.0.0.1`。
+
+2. 管理服务：
+
+```bash
+# 重新加载配置
+sudo systemctl daemon-reload
+
+# 启动
+sudo systemctl start googleplay-mcp
+
+# 设置开机自启
+sudo systemctl enable googleplay-mcp
+
+# 查看状态
+sudo systemctl status googleplay-mcp
+
+# 查看日志
+sudo journalctl -u googleplay-mcp -f
+
+# 停止
+sudo systemctl stop googleplay-mcp
+
+# 禁用开机自启
+sudo systemctl disable googleplay-mcp
+```
+
+### 使用配置文件启动
+
+两种系统服务都可以改用 `--config` 方式，将运行参数集中到 YAML 文件管理：
+
+```bash
+# 将启动命令改为:
+uv --directory /path/to/googleplay-mcp run python -m googleplay_mcp --config /path/to/config.yaml
+```
+
+这样修改配置只需编辑 YAML 文件并重启服务，无需修改 plist/service 文件。
