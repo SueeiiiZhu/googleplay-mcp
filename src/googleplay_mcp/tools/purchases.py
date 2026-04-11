@@ -23,7 +23,8 @@ def _resolve_package(config: AppConfig, package_name: str | None) -> str | None:
 def register_purchases_tools(mcp: FastMCP, config: AppConfig) -> None:
     """注册购买相关 tools."""
 
-    @mcp.tool(name="googleplay_purchases_product_get")
+    # TODO: 暂时屏蔽，需要真实购买数据
+    # @mcp.tool(name="googleplay_purchases_product_get")
     def purchases_product_get(
         product_id: str,
         token: str,
@@ -77,7 +78,8 @@ def register_purchases_tools(mcp: FastMCP, config: AppConfig) -> None:
         except HttpError as e:
             return handle_google_error(e)
 
-    @mcp.tool(name="googleplay_purchases_subscription_get")
+    # TODO: 暂时屏蔽，需要真实购买数据
+    # @mcp.tool(name="googleplay_purchases_subscription_get")
     def purchases_subscription_get(
         subscription_id: str,
         token: str,
@@ -105,7 +107,8 @@ def register_purchases_tools(mcp: FastMCP, config: AppConfig) -> None:
         except HttpError as e:
             return handle_google_error(e)
 
-    @mcp.tool(name="googleplay_purchases_subscription_v2_get")
+    # TODO: 暂时屏蔽，需要真实购买数据
+    # @mcp.tool(name="googleplay_purchases_subscription_v2_get")
     def purchases_subscription_v2_get(
         token: str,
         package_name: str = "",

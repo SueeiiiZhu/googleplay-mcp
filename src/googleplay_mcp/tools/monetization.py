@@ -53,7 +53,8 @@ def register_monetization_tools(mcp: FastMCP, config: AppConfig) -> None:
         except HttpError as e:
             return handle_google_error(e)
 
-    @mcp.tool(name="googleplay_subscriptions_get")
+    # TODO: 暂时屏蔽，需要真实购买数据
+    # @mcp.tool(name="googleplay_subscriptions_get")
     def subscriptions_get(
         product_id: str,
         package_name: str = "",

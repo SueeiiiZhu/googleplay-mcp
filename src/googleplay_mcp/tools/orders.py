@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 def register_orders_tools(mcp: FastMCP, config: AppConfig) -> None:
     """注册订单查询 tools."""
 
-    @mcp.tool(name="googleplay_orders_get")
+    # TODO: 暂时屏蔽，需要真实购买数据
+    # @mcp.tool(name="googleplay_orders_get")
     def orders_get(
         order_id: str,
         package_name: str = "",
