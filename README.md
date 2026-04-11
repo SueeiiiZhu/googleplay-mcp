@@ -160,17 +160,22 @@ npx @modelcontextprotocol/inspector uv run python -m googleplay_mcp
 
 ## 系统服务部署 (HTTP 模式)
 
-以 HTTP 模式部署为系统服务，实现开机自启和自动重启。配置文件模板在 `deploy/` 目录中。
+服务配置统一通过 `config.yaml` 管理（transport、host、port、Service Account 等），plist/service 文件只负责启动进程。
 
-### 快速安装
-
-项目提供了一键安装脚本，自动检测 `uv` 路径并替换配置中的占位符：
+### 1. 准备配置文件
 
 ```bash
-# macOS (当前用户级, 无需 sudo)
+cp config.example.yaml config.yaml
+# 编辑 config.yaml, 填写 service_account_key_file、default_package_name 等
+```
+
+### 2. 安装服务
+
+```bash
+# macOS (当前用户级)
 ./deploy/install.sh macos
 
-# macOS (系统级, 需要 sudo)
+# macOS (系统级)
 sudo ./deploy/install.sh macos --system
 
 # Linux
@@ -180,86 +185,34 @@ sudo ./deploy/install.sh linux
 ./deploy/install.sh uninstall
 ```
 
-安装后请根据脚本提示编辑配置文件中的环境变量（Service Account 路径、包名等），然后加载服务。
+脚本会自动检测 `uv` 路径和项目目录，生成最终的 plist/service 文件。
 
-### macOS (launchd)
+### 3. 管理服务
 
-配置文件模板: [`deploy/com.googleplay-mcp.plist`](deploy/com.googleplay-mcp.plist)
-
-手动安装步骤：
-
-1. 编辑 `deploy/com.googleplay-mcp.plist`，替换以下内容：
-   - `uv` 路径（通过 `which uv` 获取）
-   - 项目目录路径
-   - `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` 密钥路径
-   - `GOOGLE_PLAY_PACKAGE_NAME` 包名
-
-2. 复制到系统目录：
+**macOS:**
 
 ```bash
-# 当前用户级 (无需 sudo)
-cp deploy/com.googleplay-mcp.plist ~/Library/LaunchAgents/
-
-# 或系统级 (需要 sudo)
-sudo cp deploy/com.googleplay-mcp.plist /Library/LaunchDaemons/
-```
-
-3. 管理服务：
-
-```bash
-# --- 用户级 ---
+# 用户级
 launchctl load ~/Library/LaunchAgents/com.googleplay-mcp.plist
 launchctl unload ~/Library/LaunchAgents/com.googleplay-mcp.plist
-launchctl list | grep googleplay-mcp
 
-# --- 系统级 ---
+# 系统级
 sudo launchctl load /Library/LaunchDaemons/com.googleplay-mcp.plist
 sudo launchctl unload /Library/LaunchDaemons/com.googleplay-mcp.plist
-sudo launchctl list | grep googleplay-mcp
 
-# 查看日志
+# 日志
 tail -f /var/log/googleplay-mcp.log
-tail -f /var/log/googleplay-mcp.error.log
 ```
 
-### Linux (systemd)
-
-配置文件模板: [`deploy/googleplay-mcp.service`](deploy/googleplay-mcp.service)
-
-手动安装步骤：
-
-1. 编辑 `deploy/googleplay-mcp.service`，替换以下内容：
-   - `User` / `Group` 运行用户
-   - `WorkingDirectory` 项目目录
-   - `uv` 路径（通过 `which uv` 获取）
-   - 环境变量中的 Service Account 路径、包名等
-   - `--host` 如仅本机访问改为 `127.0.0.1`
-
-2. 复制并启动：
+**Linux:**
 
 ```bash
-sudo cp deploy/googleplay-mcp.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl start googleplay-mcp
+sudo systemctl start googleplay-mcp     # 启动
 sudo systemctl enable googleplay-mcp    # 开机自启
-```
-
-3. 管理服务：
-
-```bash
-sudo systemctl status googleplay-mcp    # 查看状态
-sudo journalctl -u googleplay-mcp -f    # 查看日志
+sudo systemctl status googleplay-mcp    # 状态
+sudo journalctl -u googleplay-mcp -f    # 日志
 sudo systemctl restart googleplay-mcp   # 重启
 sudo systemctl stop googleplay-mcp      # 停止
-sudo systemctl disable googleplay-mcp   # 禁用开机自启
 ```
 
-### 使用配置文件启动
-
-两种系统服务都可以改用 `--config` 方式，将运行参数集中到 YAML 文件管理。修改 plist/service 中的启动命令为：
-
-```bash
-uv --directory /path/to/googleplay-mcp run python -m googleplay_mcp --config /path/to/config.yaml
-```
-
-这样修改配置只需编辑 YAML 文件并重启服务，无需修改 plist/service 文件。
+修改配置只需编辑 `config.yaml` 后重启服务即可。

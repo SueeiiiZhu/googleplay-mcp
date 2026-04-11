@@ -25,8 +25,17 @@ check_uv() {
     log "uv 路径: $(which uv)"
 }
 
+ensure_config() {
+    local config_path="${PROJECT_DIR}/config.yaml"
+    if [[ ! -f "$config_path" ]]; then
+        cp "${PROJECT_DIR}/config.example.yaml" "$config_path"
+        log "已从 config.example.yaml 创建 config.yaml, 请编辑其中的配置"
+    fi
+}
+
 install_macos() {
     check_uv
+    ensure_config
 
     local system_mode=false
     [[ "${1:-}" == "--system" ]] && system_mode=true
@@ -44,7 +53,6 @@ install_macos() {
         log "安装用户级服务到 ${dest}"
     fi
 
-    # 生成 plist, 替换占位符
     sed \
         -e "s|/usr/local/bin/uv|${uv_path}|g" \
         -e "s|/path/to/googleplay-mcp|${PROJECT_DIR}|g" \
@@ -52,29 +60,25 @@ install_macos() {
 
     log "已写入 ${dest}"
     log ""
-    log "接下来请手动完成:"
-    log "  1. 编辑 ${dest} 中的环境变量 (Service Account 路径、包名等)"
+    log "接下来:"
+    log "  1. 编辑 ${PROJECT_DIR}/config.yaml 填写 Service Account 路径、包名等"
     log "  2. 加载服务:"
     if $system_mode; then
         log "     sudo launchctl load ${dest}"
-        log "  3. 查看状态: sudo launchctl list | grep googleplay-mcp"
-        log "  4. 查看日志: tail -f /var/log/googleplay-mcp.log"
     else
         log "     launchctl load ${dest}"
-        log "  3. 查看状态: launchctl list | grep googleplay-mcp"
-        log "  4. 查看日志: tail -f /var/log/googleplay-mcp.log"
     fi
 }
 
 install_linux() {
     check_uv
+    ensure_config
     [[ $EUID -ne 0 ]] && err "Linux 安装需要 sudo"
 
     local uv_path
     uv_path="$(which uv)"
     local dest="/etc/systemd/system/${SERVICE_NAME}"
 
-    # 生成 service 文件, 替换 uv 路径和项目路径
     sed \
         -e "s|/usr/local/bin/uv|${uv_path}|g" \
         -e "s|/opt/googleplay-mcp|${PROJECT_DIR}|g" \
@@ -84,18 +88,16 @@ install_linux() {
 
     log "已写入 ${dest}"
     log ""
-    log "接下来请手动完成:"
-    log "  1. 编辑 ${dest} 中的 User/Group 和环境变量"
-    log "  2. 启动服务:     sudo systemctl start googleplay-mcp"
-    log "  3. 设置开机自启: sudo systemctl enable googleplay-mcp"
-    log "  4. 查看状态:     sudo systemctl status googleplay-mcp"
-    log "  5. 查看日志:     sudo journalctl -u googleplay-mcp -f"
+    log "接下来:"
+    log "  1. 编辑 ${PROJECT_DIR}/config.yaml 填写 Service Account 路径、包名等"
+    log "  2. 如需修改运行用户, 编辑 ${dest} 中的 User/Group"
+    log "  3. 启动: sudo systemctl start googleplay-mcp"
+    log "  4. 开机自启: sudo systemctl enable googleplay-mcp"
 }
 
 uninstall() {
     log "卸载 Google Play MCP 服务..."
 
-    # macOS
     local plist_user="${HOME}/Library/LaunchAgents/${PLIST_NAME}"
     local plist_system="/Library/LaunchDaemons/${PLIST_NAME}"
 
@@ -110,7 +112,6 @@ uninstall() {
         log "已移除 ${plist_system}"
     fi
 
-    # Linux
     local service_path="/etc/systemd/system/${SERVICE_NAME}"
     if [[ -f "$service_path" ]]; then
         sudo systemctl stop googleplay-mcp 2>/dev/null || true

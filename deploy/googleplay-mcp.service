@@ -12,23 +12,12 @@ Group=deploy
 # 项目目录, 请替换为实际路径
 WorkingDirectory=/opt/googleplay-mcp
 
-# 环境变量: 请替换为实际值
-# GOOGLE_SERVICE_ACCOUNT_KEY_FILE: Service Account JSON 密钥文件路径
-# GOOGLE_PLAY_PACKAGE_NAME: 默认应用包名 (可选)
-# GOOGLE_PLAY_REPORT_BUCKET: GCS 报告 bucket 名称 (可选)
-Environment=GOOGLE_SERVICE_ACCOUNT_KEY_FILE=/opt/googleplay-mcp/service-account.json
-Environment=GOOGLE_PLAY_PACKAGE_NAME=com.example.app
-# Environment=GOOGLE_PLAY_REPORT_BUCKET=pubsite_prod_rev_xxx
+# 请将 uv 路径替换为实际路径 (which uv), 配置文件路径也需替换
+ExecStart=/usr/local/bin/uv --directory /opt/googleplay-mcp run python -m googleplay_mcp --config /opt/googleplay-mcp/config.yaml
 
-# 启动命令: 请将 uv 路径替换为实际路径 (通过 which uv 获取)
-# --host 0.0.0.0 监听所有网卡, 仅本机访问改为 127.0.0.1
-ExecStart=/usr/local/bin/uv --directory /opt/googleplay-mcp run python -m googleplay_mcp --transport http --host 0.0.0.0 --port 8000
-
-# 崩溃后自动重启, 间隔 5 秒
 Restart=always
 RestartSec=5
 
-# 日志输出到 journald
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=googleplay-mcp
