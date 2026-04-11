@@ -31,7 +31,7 @@ _VITALS_METRIC_SETS = [
      "查询应用的崩溃率指标",
      ["crashRate", "userPerceivedCrashRate", "distinctUsers"]),
     ("slowstartrate", "slowStartRateMetricSet", "慢启动率",
-     "查询应用的冷启动/温启动/热启动慢启动率",
+     "查询应用的冷启动/温启动/热启动慢启动率 (必须包含 startType dimension)",
      ["slowStartRate", "distinctUsers"]),
     ("slowrenderingrate", "slowRenderingRateMetricSet", "慢渲染率",
      "查询应用的慢帧渲染和冻帧率",
@@ -41,8 +41,14 @@ _VITALS_METRIC_SETS = [
      ["excessiveWakeupRate", "distinctUsers"]),
     ("stuckbackgroundwakelockrate", "stuckBackgroundWakelockRateMetricSet", "后台锁定率",
      "查询应用的后台 WakeLock 卡住率",
-     ["stuckBackgroundWakelockRate", "distinctUsers"]),
+     ["stuckBgWakelockRate", "distinctUsers"]),
 ]
+
+
+# 某些 metric set 有必选 dimensions
+_REQUIRED_DIMENSIONS: dict[str, list[str]] = {
+    "slowstartrate": ["startType"],
+}
 
 
 def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
@@ -164,8 +170,8 @@ def register_reporting_tools(mcp: FastMCP, config: AppConfig) -> None:
                             "month": int(parts[1]),
                             "day": int(parts[2]),
                         }
-                    if dimensions:
-                        body["dimensions"] = dimensions
+                    req_dims = _REQUIRED_DIMENSIONS.get(mid, [])
+                    body["dimensions"] = dimensions if dimensions else req_dims
                     body["metrics"] = metrics if metrics else def_metrics
                     if page_token:
                         body["pageToken"] = page_token
@@ -299,19 +305,17 @@ Args:
     @mcp.tool(name="googleplay_vitals_errors_reports_search")
     def errors_reports_search(
         package_name: str = "",
-        issue_name: str = "",
         filter_expr: str = "",
         page_size: int = 50,
         page_token: str = "",
         interval_start: str = "",
         interval_end: str = "",
     ) -> dict:
-        """搜索特定错误问题的详细错误报告 (含堆栈跟踪)。
+        """搜索应用的详细错误报告 (含堆栈跟踪)。
 
         Args:
             package_name: 应用包名, 留空使用默认配置
-            issue_name: 错误问题的完整名称 (从 errors_issues_search 获取)
-            filter_expr: 过滤表达式
+            filter_expr: 过滤表达式, 如 'reportType = CRASH'
             page_size: 每页数量, 默认 50
             page_token: 分页 token
             interval_start: 时间范围起始, RFC3339 格式
@@ -324,15 +328,8 @@ Args:
             service = get_reporting_service(config)
             parent = f"apps/{pkg}"
             kwargs: dict = {"parent": parent, "pageSize": page_size}
-            filters = []
-            if issue_name:
-                # issue_name 格式为 apps/{pkg}/{issueHash}，提取 issueHash
-                issue_id = issue_name.rsplit("/", 1)[-1]
-                filters.append(f'issueId = "{issue_id}"')
             if filter_expr:
-                filters.append(filter_expr)
-            if filters:
-                kwargs["filter"] = " AND ".join(filters)
+                kwargs["filter"] = filter_expr
             if page_token:
                 kwargs["pageToken"] = page_token
             if interval_start and interval_end:
