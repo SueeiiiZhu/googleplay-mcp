@@ -1,0 +1,9 @@
+server:
+  transport: http          # stdio | http
+  host: 127.0.0.1
+  port: 8000
+
+google:
+  service_account_key_file: /path/to/service-account.json
+  default_package_name: com.example.app
+  report_bucket: pubsite_prod_rev_00000000000000000000
