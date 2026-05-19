@@ -241,18 +241,22 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
             prefix: 文件前缀过滤 (如 '202401' 过滤 2024 年 1 月)
             max_results: 最大返回文件数, 默认 50
         """
-        full_prefix = TYPE_PREFIX_MAP.get(report_type, f"{report_type}/")
-        if prefix:
-            full_prefix += prefix
+        type_prefix = TYPE_PREFIX_MAP.get(report_type, f"{report_type}/")
 
         local_dir = _resolve_local_dir(config)
         if local_dir is not None:
-            files = _list_local_files(local_dir, full_prefix, max_results)
+            local_name_prefix = config.google.report_local_name_prefixes.get(
+                report_type, ""
+            )
+            local_full_prefix = type_prefix + local_name_prefix + (prefix or "")
+            files = _list_local_files(local_dir, local_full_prefix, max_results)
             if files:
                 return success(
                     files, f"找到 {len(files)} 个报告文件 [from local]"
                 )
-            logger.info("本地无 %s* 匹配, fallback 到 GCS", full_prefix)
+            logger.info("本地无 %s* 匹配, fallback 到 GCS", local_full_prefix)
+
+        full_prefix = type_prefix + (prefix or "")
 
         bucket_name = bucket or config.google.report_bucket
         if not bucket_name:

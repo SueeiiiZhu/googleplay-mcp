@@ -24,6 +24,7 @@ class GoogleConfig:
     default_package_name: str | None = None
     report_bucket: str | None = None
     report_local_dir: str | None = None
+    report_local_name_prefixes: dict[str, str] = field(default_factory=dict)
     gsutil_bin: str | None = None
 
 
@@ -95,6 +96,12 @@ def load_config(args: argparse.Namespace | None = None) -> AppConfig:
             config.google.gsutil_bin = google_data["gsutil_bin"]
         if "report_local_dir" in google_data:
             config.google.report_local_dir = google_data["report_local_dir"]
+        if "report_local_name_prefixes" in google_data:
+            value = google_data["report_local_name_prefixes"] or {}
+            if isinstance(value, dict):
+                config.google.report_local_name_prefixes = {
+                    str(k): str(v) for k, v in value.items()
+                }
 
     # Layer 2: Environment variables (fill gaps)
     _apply_env(config)

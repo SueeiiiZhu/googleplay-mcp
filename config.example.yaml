@@ -16,7 +16,14 @@ google:
   # gsutil_bin: /usr/local/google-cloud-sdk/bin/gsutil
 
   # 本地报告目录 (可选)。若设置, reports tools 优先从该目录读取,
-  # 镜像 GCS 路径结构 (如 {local_dir}/sales/salesreport_*.csv),
+  # 镜像 GCS 路径结构 (如 {local_dir}/sales/<file>),
   # 本地缺失时再 fallback 到 SA → gsutil。适合服务器已用 cron
   # 同步报告的场景。
   # report_local_dir: /data/play-reports
+
+  # 各报告类型在本地的文件名固定前缀 (可选)。当本地文件名跟
+  # Google 默认命名不同时, 在这里配置可让 list_files 只传日期即可匹配。
+  # 例: 本地文件为 googleplay_transformed_sales_summary_20260512.csv,
+  # 配置后调用 prefix="20260512" 即能找到。GCS 路径不受影响。
+  # report_local_name_prefixes:
+  #   sales: googleplay_transformed_sales_summary_
