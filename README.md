@@ -138,6 +138,29 @@ uv run python -m googleplay_mcp --config config.yaml
    export GOOGLE_PLAY_REPORT_BUCKET=pubsite_prod_rev_01234567890123456789
    ```
 
+#### gsutil fallback（当 SA 财务权限同步失败时）
+
+Play Console 勾选 **View financial data** 后，对应的 GCS bucket IAM 同步偶尔会卡住，
+导致 `sales/`、`earnings/` 路径返回 403（即便 `stats/installs/` 等 bulk reports 路径正常）。
+此时 `reports_list_files` / `reports_download` 会**自动 fallback 到 gsutil**，
+使用本机 `gcloud auth login` 的用户凭证下载（用户级权限不受 SA 同步问题影响）。
+
+部署服务器准备：
+
+```bash
+# 1. 安装 gcloud SDK 并登录有 Play Console 财务权限的 Google 账号
+gcloud auth login
+
+# 2. 验证可以访问 bucket
+gsutil ls gs://pubsite_prod_rev_xxx/sales/
+
+# 3. (可选) 若 gsutil 不在 PATH, 指定绝对路径
+export GOOGLE_PLAY_GSUTIL_BIN=/usr/local/google-cloud-sdk/bin/gsutil
+```
+
+财务报告下载下来是 `.zip` 包，本模块会自动解压并解析里面的 utf-16 CSV，
+无需手动处理。
+
 ### 5. 验证配置
 
 配置完成后，运行以下命令验证 Service Account 是否能正常工作：

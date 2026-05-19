@@ -1,9 +1,21 @@
-"""GCS 财务/销售报告下载 tools."""
+"""GCS 财务/销售报告下载 tools。
+
+优先用 Service Account 走 google-cloud-storage SDK。当 SA 在 GCS bucket 上
+没有 object 读权限（403 Forbidden）时，自动 fallback 到本机 gsutil（沿用
+gcloud auth login 的用户凭证），用于绕开 Play Console → GCS IAM 同步问题。
+
+财务报告通常是 .zip 包，内含 utf-16 编码的 CSV，本模块会自动解压并解析。
+"""
 
 from __future__ import annotations
 
 import csv
 import io
+import logging
+import os
+import re
+import subprocess
+import zipfile
 from typing import TYPE_CHECKING
 
 from googleplay_mcp.auth import get_credentials
@@ -13,6 +25,141 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
     from googleplay_mcp.config import AppConfig
+
+
+logger = logging.getLogger(__name__)
+
+TYPE_PREFIX_MAP = {
+    "earnings": "earnings/",
+    "sales": "sales/",
+    "installs": "stats/installs/",
+    "crashes": "stats/crashes/",
+    "reviews": "reviews/",
+}
+
+GSUTIL_TIMEOUT = 300
+
+
+def _gsutil_bin() -> str:
+    return os.getenv("GOOGLE_PLAY_GSUTIL_BIN", "gsutil")
+
+
+def _is_forbidden(exc: Exception) -> bool:
+    try:
+        from google.api_core.exceptions import Forbidden
+
+        if isinstance(exc, Forbidden):
+            return True
+    except ImportError:
+        pass
+    msg = str(exc)
+    return "403" in msg and ("storage.objects" in msg or "Forbidden" in msg)
+
+
+def _gsutil_list(bucket: str, full_prefix: str, max_results: int) -> list[dict]:
+    target = f"gs://{bucket}/{full_prefix}*"
+    cmd = [_gsutil_bin(), "ls", "-l", target]
+    try:
+        out = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=GSUTIL_TIMEOUT,
+            check=True,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            f"找不到 {_gsutil_bin()}，请确认服务器已安装 gsutil 并在 PATH 中，"
+            "或通过 GOOGLE_PLAY_GSUTIL_BIN 指定绝对路径"
+        ) from e
+    except subprocess.CalledProcessError as e:
+        err_msg = (e.stderr or e.stdout or "").strip()
+        raise RuntimeError(f"gsutil ls 失败 (exit={e.returncode}): {err_msg}") from e
+
+    line_re = re.compile(r"^\s*(\d+)\s+(\S+)\s+(gs://\S+)\s*$")
+    bucket_prefix = f"gs://{bucket}/"
+    files: list[dict] = []
+    for line in out.stdout.splitlines():
+        if not line.strip() or line.startswith("TOTAL:"):
+            continue
+        m = line_re.match(line)
+        if not m:
+            continue
+        uri = m.group(3)
+        name = uri[len(bucket_prefix):] if uri.startswith(bucket_prefix) else uri
+        files.append({"name": name, "size": int(m.group(1)), "updated": m.group(2)})
+        if len(files) >= max_results:
+            break
+    return files
+
+
+def _gsutil_download_bytes(bucket: str, file_path: str) -> bytes:
+    target = f"gs://{bucket}/{file_path}"
+    cmd = [_gsutil_bin(), "cp", target, "-"]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=GSUTIL_TIMEOUT,
+            check=True,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            f"找不到 {_gsutil_bin()}，请确认服务器已安装 gsutil 并在 PATH 中"
+        ) from e
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"gsutil cp 失败 (exit={e.returncode}): {err_msg}") from e
+    return proc.stdout
+
+
+def _decode_csv_bytes(data: bytes) -> str:
+    for encoding in ("utf-16", "utf-8-sig", "utf-8"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _parse_csv_text(text: str, max_rows: int) -> dict:
+    reader = csv.DictReader(io.StringIO(text))
+    rows: list[dict] = []
+    for i, row in enumerate(reader):
+        if i >= max_rows:
+            break
+        rows.append(dict(row))
+    return {
+        "headers": list(reader.fieldnames or []),
+        "rows": rows,
+        "row_count": len(rows),
+        "truncated": len(rows) >= max_rows,
+    }
+
+
+def _parse_report_bytes(data: bytes, file_path: str, max_rows: int) -> dict:
+    if file_path.lower().endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            csv_members = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+            if not csv_members:
+                return {
+                    "headers": [],
+                    "rows": [],
+                    "row_count": 0,
+                    "zip_members": zf.namelist(),
+                    "note": "zip 内未找到 CSV 文件",
+                }
+            if len(csv_members) == 1:
+                text = _decode_csv_bytes(zf.read(csv_members[0]))
+                result = _parse_csv_text(text, max_rows)
+                result["source_file"] = csv_members[0]
+                return result
+            members_result = []
+            for name in csv_members:
+                text = _decode_csv_bytes(zf.read(name))
+                members_result.append({"name": name, **_parse_csv_text(text, max_rows)})
+            return {"csv_files": members_result, "file_count": len(members_result)}
+    return _parse_csv_text(_decode_csv_bytes(data), max_rows)
 
 
 def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
@@ -40,35 +187,34 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
                 "bucket 格式通常为 pubsite_prod_rev_XXXXXXXXXX，\n"
                 "可在 Google Play Console → 下载报告 → 复制 Cloud Storage URI 获取。"
             )
+
+        full_prefix = TYPE_PREFIX_MAP.get(report_type, f"{report_type}/")
+        if prefix:
+            full_prefix += prefix
+
         try:
             from google.cloud import storage
 
             credentials = get_credentials(config)
             client = storage.Client(credentials=credentials, project=credentials.project_id)
             bucket_obj = client.bucket(bucket_name)
-
-            type_prefix_map = {
-                "earnings": "earnings/",
-                "sales": "sales/",
-                "installs": "stats/installs/",
-                "crashes": "stats/crashes/",
-                "reviews": "reviews/",
-            }
-            full_prefix = type_prefix_map.get(report_type, f"{report_type}/")
-            if prefix:
-                full_prefix += prefix
-
             blobs = list(bucket_obj.list_blobs(prefix=full_prefix, max_results=max_results))
             files = [
-                {
-                    "name": blob.name,
-                    "size": blob.size,
-                    "updated": str(blob.updated),
-                }
-                for blob in blobs
+                {"name": b.name, "size": b.size, "updated": str(b.updated)}
+                for b in blobs
             ]
             return success(files, f"找到 {len(files)} 个报告文件")
         except Exception as e:
+            if _is_forbidden(e):
+                logger.warning("SA list 返回 403, fallback 到 gsutil: %s", e)
+                try:
+                    files = _gsutil_list(bucket_name, full_prefix, max_results)
+                    return success(
+                        files,
+                        f"找到 {len(files)} 个报告文件 (via gsutil fallback)",
+                    )
+                except Exception as e2:
+                    return error(f"SA 403 且 gsutil fallback 失败: {e2}")
             return error(f"列出报告文件失败: {e}")
 
     @mcp.tool(name="googleplay_reports_download")
@@ -77,7 +223,7 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
         bucket: str = "",
         max_rows: int = 500,
     ) -> dict:
-        """下载并解析 Google Play 报告文件 (CSV 格式)。
+        """下载并解析 Google Play 报告文件 (CSV 直接解析, .zip 自动解压)。
 
         Args:
             file_path: 报告文件路径 (从 reports_list_files 获取的 name 字段)
@@ -87,6 +233,8 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
         bucket_name = bucket or config.google.report_bucket
         if not bucket_name:
             return error("需要提供 bucket 名称或设置 GOOGLE_PLAY_REPORT_BUCKET")
+
+        used_gsutil = False
         try:
             from google.cloud import storage
 
@@ -94,20 +242,34 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
             client = storage.Client(credentials=credentials, project=credentials.project_id)
             bucket_obj = client.bucket(bucket_name)
             blob = bucket_obj.blob(file_path)
-
-            content = blob.download_as_text(encoding="utf-16")
-
-            reader = csv.DictReader(io.StringIO(content))
-            rows = []
-            for i, row in enumerate(reader):
-                if i >= max_rows:
-                    break
-                rows.append(dict(row))
-
-            total_hint = f"(显示前 {max_rows} 行)" if len(rows) == max_rows else ""
-            return success(
-                {"headers": reader.fieldnames, "rows": rows, "row_count": len(rows)},
-                f"解析 {file_path} 得到 {len(rows)} 行数据 {total_hint}",
-            )
+            data = blob.download_as_bytes()
         except Exception as e:
-            return error(f"下载报告失败: {e}")
+            if _is_forbidden(e):
+                logger.warning("SA download 返回 403, fallback 到 gsutil: %s", e)
+                try:
+                    data = _gsutil_download_bytes(bucket_name, file_path)
+                    used_gsutil = True
+                except Exception as e2:
+                    return error(f"SA 403 且 gsutil fallback 失败: {e2}")
+            else:
+                return error(f"下载报告失败: {e}")
+
+        try:
+            parsed = _parse_report_bytes(data, file_path, max_rows)
+        except Exception as e:
+            return error(f"解析报告失败 ({file_path}): {e}")
+
+        if "csv_files" in parsed:
+            total_rows = sum(m["row_count"] for m in parsed["csv_files"])
+            summary = (
+                f"解析 {file_path} 得到 {parsed['file_count']} 个 CSV 共 {total_rows} 行"
+            )
+        else:
+            row_count = parsed.get("row_count", 0)
+            summary = f"解析 {file_path} 得到 {row_count} 行数据"
+            if parsed.get("truncated"):
+                summary += f" (前 {max_rows} 行, 已截断)"
+
+        if used_gsutil:
+            summary += " [via gsutil fallback]"
+        return success(parsed, summary)
