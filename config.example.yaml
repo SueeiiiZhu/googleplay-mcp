@@ -21,6 +21,12 @@ google:
   # 同步报告的场景。
   # report_local_dir: /data/play-reports
 
+  # 各报告类型在本地的子目录名 (可选)。当本地子目录名跟 GCS 不一致时
+  # 在这里覆盖, 默认为 sales/、earnings/、stats/installs/ 等。
+  # 例: 本地实际是 play_sales/, 那么 sales 类型应该配置为 play_sales/。
+  # report_local_type_subdirs:
+  #   sales: play_sales/
+
   # 各报告类型在本地的文件名固定前缀 (可选)。当本地文件名跟
   # Google 默认命名不同时, 在这里配置可让 list_files 只传日期即可匹配。
   # 例: 本地文件为 googleplay_transformed_sales_summary_20260512.csv,

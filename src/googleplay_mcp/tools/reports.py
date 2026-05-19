@@ -245,10 +245,15 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
 
         local_dir = _resolve_local_dir(config)
         if local_dir is not None:
+            local_type_subdir = config.google.report_local_type_subdirs.get(
+                report_type, type_prefix
+            )
+            if local_type_subdir and not local_type_subdir.endswith("/"):
+                local_type_subdir += "/"
             local_name_prefix = config.google.report_local_name_prefixes.get(
                 report_type, ""
             )
-            local_full_prefix = type_prefix + local_name_prefix + (prefix or "")
+            local_full_prefix = local_type_subdir + local_name_prefix + (prefix or "")
             files = _list_local_files(local_dir, local_full_prefix, max_results)
             if files:
                 return success(
