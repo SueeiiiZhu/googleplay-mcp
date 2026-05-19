@@ -14,3 +14,9 @@ google:
   # gcloud auth login 的用户凭证下载, 绕开 Play Console 财务权限
   # 同步到 GCS IAM 失败的问题。
   # gsutil_bin: /usr/local/google-cloud-sdk/bin/gsutil
+
+  # 本地报告目录 (可选)。若设置, reports tools 优先从该目录读取,
+  # 镜像 GCS 路径结构 (如 {local_dir}/sales/salesreport_*.csv),
+  # 本地缺失时再 fallback 到 SA → gsutil。适合服务器已用 cron
+  # 同步报告的场景。
+  # report_local_dir: /data/play-reports

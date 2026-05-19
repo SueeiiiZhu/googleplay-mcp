@@ -161,6 +161,28 @@ export GOOGLE_PLAY_GSUTIL_BIN=/usr/local/google-cloud-sdk/bin/gsutil
 财务报告下载下来是 `.zip` 包，本模块会自动解压并解析里面的 utf-16 CSV，
 无需手动处理。
 
+#### 本地目录优先（服务器已缓存报告时）
+
+如果服务器已经通过 cron / 同步脚本把报告拉到本地（例如 `/data/play-reports/sales/salesreport_20260415.csv`），
+可以配置 `report_local_dir`，reports tools 会**优先从本地读取**，本地缺失再 fallback 到 SA → gsutil。
+本地路径需要镜像 GCS 路径结构（`{local_dir}/{report_type}/<file>`）。
+
+```yaml
+google:
+  report_local_dir: /data/play-reports
+```
+
+或环境变量：
+
+```bash
+export GOOGLE_PLAY_REPORT_LOCAL_DIR=/data/play-reports
+```
+
+读取行为：
+- `reports_list_files`：本地匹配到任意文件就只列本地；本地空才查 GCS
+- `reports_download`：传入的 `file_path` 在本地存在就读本地；否则走 GCS
+- 响应摘要里会标注 `[from local]` 方便观察
+
 ### 5. 验证配置
 
 配置完成后，运行以下命令验证 Service Account 是否能正常工作：

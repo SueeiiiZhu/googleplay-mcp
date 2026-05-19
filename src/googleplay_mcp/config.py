@@ -23,6 +23,7 @@ class GoogleConfig:
     service_account_key: str | None = None
     default_package_name: str | None = None
     report_bucket: str | None = None
+    report_local_dir: str | None = None
     gsutil_bin: str | None = None
 
 
@@ -49,6 +50,8 @@ def _apply_env(config: AppConfig) -> None:
         config.google.report_bucket = os.getenv("GOOGLE_PLAY_REPORT_BUCKET")
     if not config.google.gsutil_bin:
         config.google.gsutil_bin = os.getenv("GOOGLE_PLAY_GSUTIL_BIN")
+    if not config.google.report_local_dir:
+        config.google.report_local_dir = os.getenv("GOOGLE_PLAY_REPORT_LOCAL_DIR")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -90,6 +93,8 @@ def load_config(args: argparse.Namespace | None = None) -> AppConfig:
             config.google.report_bucket = google_data["report_bucket"]
         if "gsutil_bin" in google_data:
             config.google.gsutil_bin = google_data["gsutil_bin"]
+        if "report_local_dir" in google_data:
+            config.google.report_local_dir = google_data["report_local_dir"]
 
     # Layer 2: Environment variables (fill gaps)
     _apply_env(config)
