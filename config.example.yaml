@@ -7,3 +7,10 @@ google:
   service_account_key_file: /path/to/service-account.json
   default_package_name: com.example.app
   report_bucket: pubsite_prod_rev_00000000000000000000
+
+  # gsutil 二进制路径 (可选, 默认从 PATH 找 'gsutil')。
+  # 当 Service Account 在 bucket 上无 object 读权限 (403) 时,
+  # reports tools 会自动 fallback 到 gsutil, 使用本机
+  # gcloud auth login 的用户凭证下载, 绕开 Play Console 财务权限
+  # 同步到 GCS IAM 失败的问题。
+  # gsutil_bin: /usr/local/google-cloud-sdk/bin/gsutil

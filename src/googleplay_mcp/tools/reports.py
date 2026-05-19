@@ -40,8 +40,8 @@ TYPE_PREFIX_MAP = {
 GSUTIL_TIMEOUT = 300
 
 
-def _gsutil_bin() -> str:
-    return os.getenv("GOOGLE_PLAY_GSUTIL_BIN", "gsutil")
+def _resolve_gsutil_bin(config: AppConfig) -> str:
+    return config.google.gsutil_bin or os.getenv("GOOGLE_PLAY_GSUTIL_BIN") or "gsutil"
 
 
 def _is_forbidden(exc: Exception) -> bool:
@@ -56,9 +56,11 @@ def _is_forbidden(exc: Exception) -> bool:
     return "403" in msg and ("storage.objects" in msg or "Forbidden" in msg)
 
 
-def _gsutil_list(bucket: str, full_prefix: str, max_results: int) -> list[dict]:
+def _gsutil_list(
+    bucket: str, full_prefix: str, max_results: int, gsutil_bin: str
+) -> list[dict]:
     target = f"gs://{bucket}/{full_prefix}*"
-    cmd = [_gsutil_bin(), "ls", "-l", target]
+    cmd = [gsutil_bin, "ls", "-l", target]
     try:
         out = subprocess.run(
             cmd,
@@ -69,8 +71,8 @@ def _gsutil_list(bucket: str, full_prefix: str, max_results: int) -> list[dict]:
         )
     except FileNotFoundError as e:
         raise RuntimeError(
-            f"找不到 {_gsutil_bin()}，请确认服务器已安装 gsutil 并在 PATH 中，"
-            "或通过 GOOGLE_PLAY_GSUTIL_BIN 指定绝对路径"
+            f"找不到 {gsutil_bin}，请确认服务器已安装 gsutil 并在 PATH 中，"
+            "或通过 google.gsutil_bin (yaml) / GOOGLE_PLAY_GSUTIL_BIN (env) 指定绝对路径"
         ) from e
     except subprocess.CalledProcessError as e:
         err_msg = (e.stderr or e.stdout or "").strip()
@@ -93,9 +95,9 @@ def _gsutil_list(bucket: str, full_prefix: str, max_results: int) -> list[dict]:
     return files
 
 
-def _gsutil_download_bytes(bucket: str, file_path: str) -> bytes:
+def _gsutil_download_bytes(bucket: str, file_path: str, gsutil_bin: str) -> bytes:
     target = f"gs://{bucket}/{file_path}"
-    cmd = [_gsutil_bin(), "cp", target, "-"]
+    cmd = [gsutil_bin, "cp", target, "-"]
     try:
         proc = subprocess.run(
             cmd,
@@ -105,7 +107,7 @@ def _gsutil_download_bytes(bucket: str, file_path: str) -> bytes:
         )
     except FileNotFoundError as e:
         raise RuntimeError(
-            f"找不到 {_gsutil_bin()}，请确认服务器已安装 gsutil 并在 PATH 中"
+            f"找不到 {gsutil_bin}，请确认服务器已安装 gsutil 并在 PATH 中"
         ) from e
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr.decode("utf-8", errors="replace").strip()
@@ -208,7 +210,12 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
             if _is_forbidden(e):
                 logger.warning("SA list 返回 403, fallback 到 gsutil: %s", e)
                 try:
-                    files = _gsutil_list(bucket_name, full_prefix, max_results)
+                    files = _gsutil_list(
+                        bucket_name,
+                        full_prefix,
+                        max_results,
+                        _resolve_gsutil_bin(config),
+                    )
                     return success(
                         files,
                         f"找到 {len(files)} 个报告文件 (via gsutil fallback)",
@@ -247,7 +254,9 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
             if _is_forbidden(e):
                 logger.warning("SA download 返回 403, fallback 到 gsutil: %s", e)
                 try:
-                    data = _gsutil_download_bytes(bucket_name, file_path)
+                    data = _gsutil_download_bytes(
+                        bucket_name, file_path, _resolve_gsutil_bin(config)
+                    )
                     used_gsutil = True
                 except Exception as e2:
                     return error(f"SA 403 且 gsutil fallback 失败: {e2}")
