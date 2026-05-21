@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 TYPE_PREFIX_MAP = {
     "earnings": "earnings/",
     "sales": "sales/",
-    "subscriptions": "stats/subscriptions/",
+    "subscriptions": "financial-stats/subscriptions/",
     "installs": "stats/installs/",
     "crashes": "stats/crashes/",
     "reviews": "reviews/",
