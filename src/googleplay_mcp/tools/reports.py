@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 TYPE_PREFIX_MAP = {
     "earnings": "earnings/",
     "sales": "sales/",
+    "subscriptions": "stats/subscriptions/",
     "installs": "stats/installs/",
     "crashes": "stats/crashes/",
     "reviews": "reviews/",
@@ -236,7 +237,7 @@ def register_reports_tools(mcp: FastMCP, config: AppConfig) -> None:
         """列出 Google Play 报告 bucket 中的报告文件。
 
         Args:
-            report_type: 报告类型 - earnings (收入), sales (销售), installs (安装), crashes (崩溃), reviews (评论)
+            report_type: 报告类型 - earnings (收入), sales (销售), subscriptions (订阅), installs (安装), crashes (崩溃), reviews (评论)
             bucket: GCS bucket 名称, 留空使用默认配置
             prefix: 文件前缀过滤 (如 '202401' 过滤 2024 年 1 月)
             max_results: 最大返回文件数, 默认 50
